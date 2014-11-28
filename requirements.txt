@@ -4,3 +4,4 @@ enum==0.4.4
 smpp.pdu==0.3
 wsgiref==0.1.2
 zope.interface==4.1.1
+chardet
