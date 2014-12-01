@@ -15,7 +15,6 @@ class MyProtocol(Protocol):
 
     def dataReceived(self, data):
         pdu = self._bin2pdu(data)
-        # print 'PDU: ', pdu, '\n'
         if str(pdu.commandId) == 'submit_sm_resp':
             self.SMSSUBMITTED = self.SMSSUBMITTED + 1
             print 'submit_sm_resp: ', self.SMSSUBMITTED
@@ -46,8 +45,6 @@ class MyProtocol(Protocol):
         return PDUEncoder().decode(io_pdu)
 
     def _submit_sm(self, seq_num=1):
-        # print 'seqNUM', seq_num
-        # print 'Send submit sm request\n'
         message_text = "This is MESSAGE!!1"
         encoding = chardet.detect(message_text)['encoding']
         data_coding = pdu_types.DataCoding(
@@ -99,7 +96,6 @@ class MyProtocol(Protocol):
         self.transport.write(unbind)
 
     def _bind(self):
-        # self.state = 'BIND'
         bind_pdu = operations.BindTransmitter(seqNum=1,
                                               system_id=LOGIN,
                                               password=PASSWORD,
