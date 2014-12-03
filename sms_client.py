@@ -1,18 +1,15 @@
 # -*- coding: utf-8 -*-
-import binascii
-import chardet
 
 from StringIO import StringIO
 from twisted.internet.protocol import Protocol, ClientFactory
-from twisted.internet import reactor
-from smpp.pdu import operations, pdu_types
+from twisted.internet import reactor, task
+from smpp.pdu import operations
 from smpp.pdu.pdu_encoding import PDUEncoder
 
 from settings import HOST, PORT, LOGIN, PASSWORD, SMSCOUNT
 
 
 class MyProtocol(Protocol):
-
     def dataReceived(self, data):
         pdu = self._bin2pdu(data)
         if str(pdu.commandId) == 'submit_sm_resp':
@@ -24,9 +21,9 @@ class MyProtocol(Protocol):
             print 'Auth OK'
             self.state = 'BINDED'
             self.SMSSUBMITTED = 0
-            for i in range(1, SMSCOUNT + 1):
-                print 'sebmit_sm', i
-                self._submit_sm(i)
+            self.SMSSENDED = 0
+            self.send_sms = task.LoopingCall(self._submit_sm)
+            self.send_sms.start(0.01)
         elif str(pdu.status) == 'ESME_RINVSYSID':
             print 'Invalid System ID'
 
@@ -44,45 +41,31 @@ class MyProtocol(Protocol):
         io_pdu = StringIO(bindata)
         return PDUEncoder().decode(io_pdu)
 
-    def _submit_sm(self, seq_num=1):
-        message_text = "This is MESSAGE!!1"
-        encoding = chardet.detect(message_text)['encoding']
-        data_coding = pdu_types.DataCoding(
-            scheme=pdu_types.DataCodingScheme.DEFAULT,
-            schemeData=pdu_types.DataCodingDefault.UCS2
-        )
-        message_text = message_text.decode(encoding).encode('utf-16-be')
-        sm_pdu = operations.SubmitSM(
-            seqNum=seq_num,
-            short_message=message_text,
-            # destination_addr='380669113263', #sasha
-            #destination_addr='380930188472', #kiril
-            # destination_addr='380632588588',
-            destination_addr='380660803034',  #sergey
-            #destination_addr='380977927149',  # igor
-            source_addr_ton=pdu_types.AddrTon.ALPHANUMERIC,
-            source_addr_npi=pdu_types.AddrNpi.UNKNOWN,
-            source_addr='380632588588',
-            dest_addr_ton=pdu_types.AddrTon.INTERNATIONAL,
-            dest_addr_npi=pdu_types.AddrNpi.ISDN,
-            data_coding=data_coding,
-            registered_delivery=pdu_types.RegisteredDelivery(
-                pdu_types.RegisteredDeliveryReceipt.SMSC_DELIVERY_RECEIPT_REQUESTED)
-        )
+    def _pdu2bin(self, bindata):
+        return PDUEncoder().encode(bindata)
 
-        pdubin = PDUEncoder().encode(sm_pdu)
-
-        hex_stream = '00000071000000040000000000005b73000500496e666f0001013338303933333033303737370003000000303030303031303030303030303030520001000800300414043e0431044004380439002004340435043d044c00200021002004420435044104420020041f043004320435043b'
-        pdubin = binascii.a2b_hex(hex_stream)
-
-        self.transport.write(pdubin)
+    def _submit_sm(self):
+        if SMSCOUNT != self.SMSSENDED:
+            seq_num = self.SMSSENDED + 1
+            print 'Submit sm: ', seq_num
+            message_text = "This is MESSAGE!!1" + str(seq_num)
+            sm_pdu = operations.SubmitSM(
+                seqNum=seq_num,
+                short_message=message_text,
+                destination_addr='380660803034',
+            )
+            pdubin = self._pdu2bin(sm_pdu)
+            self.transport.write(pdubin)
+            self.SMSSENDED = seq_num
+        else:
+            self.send_sms.stop()
 
     def _enqire_link(self):
         print 'Sending enqirelink start\n'
         enqlink = operations.EnquireLink(
             seqNum=1
         )
-        enqlink = PDUEncoder().encode(enqlink)
+        enqlink = self._pdu2bin(enqlink)
         self.transport.write(enqlink)
         print 'Sending enqirelink done\n'
 
@@ -92,7 +75,7 @@ class MyProtocol(Protocol):
         unbind = operations.Unbind(
             seqNum=1
         )
-        unbind = PDUEncoder().encode(unbind)
+        unbind = self._pdu2bin(unbind)
         self.transport.write(unbind)
 
     def _bind(self):
@@ -100,7 +83,7 @@ class MyProtocol(Protocol):
                                               system_id=LOGIN,
                                               password=PASSWORD,
                                               system_type='speedflow')
-        pdubin = PDUEncoder().encode(bind_pdu)
+        pdubin = self._pdu2bin(bind_pdu)
         self.transport.write(pdubin)
 
 
